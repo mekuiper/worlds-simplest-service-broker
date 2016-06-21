@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"strings"
+	"io/ioutil"
+	"net/http"
 
 	"github.com/cloudfoundry-community/go-cfenv"
 	"github.com/cloudfoundry-community/types-cf"
@@ -27,7 +29,7 @@ type serviceBindingResponse struct {
 	SyslogDrainURL string                 `json:"syslog_drain_url,omitempty"`
 }
 
-var serviceName, servicePlan, baseGUID, authUser, authPassword, tags, imageURL string
+var solrConfigSetName, solrEndPoint, serviceName, servicePlan, baseGUID, authUser, authPassword, tags, imageURL string
 var serviceBinding serviceBindingResponse
 var appURL string
 
@@ -84,6 +86,31 @@ func createServiceInstance(params martini.Params) (int, []byte) {
 		fmt.Printf("%# v\n", pretty.Formatter(instance))
 		return 500, []byte{}
 	}
+
+	fmt.Printf("Creating Solr Collection using serviceName \n")
+
+	for firstLvlkey, firstLvlValue := range serviceBinding.Credentials {
+		fmt.Println("First Level Key:", firstLvlkey)
+		fmt.Println("First Level Value:", firstLvlValue)
+		solrEndPoint = firstLvlValue.(string)
+
+		fmt.Println("solrEndPoint:" + solrEndPoint +  " firstLvlValue" +  firstLvlValue.(string))
+    }
+   // res, err := http.Get("http://sbfusion03.springblox.com:8983/solr/admin/collections?action=CREATE&name=" + serviceName + "&numShards=2&replicationFactor=2&maxShardsPerNode=4&collection.configName=cnn_site_2_sbfusion03")
+    res, err := http.Get(solrEndPoint + "/admin/collections?action=CREATE&name=" + serviceName + "&numShards=2&replicationFactor=2&maxShardsPerNode=4&collection.configName=" + solrConfigSetName)
+
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    createCollection, err := ioutil.ReadAll(res.Body)
+
+    res.Body.Close()
+    if err != nil {
+    	log.Fatal(err)
+    }
+    fmt.Printf("%s", createCollection)
+
 	return 201, json
 }
 
@@ -137,6 +164,11 @@ func main() {
 		servicePlan = "shared"
 	}
 
+    solrConfigSetName = os.Getenv("SOLR_CONFIG_SET")
+    if solrConfigSetName == "" {
+       solrConfigSetName = "logstash_conf"
+    }
+
 	authUser = os.Getenv("AUTH_USER")
 	authPassword = os.Getenv("AUTH_PASSWORD")
 	if (authUser != "") && (authPassword != "") {
@@ -150,6 +182,7 @@ func main() {
 	if credentials == "" {
 		credentials = "{\"port\": \"4000\"}"
 	}
+
 	tags = os.Getenv("TAGS")
 	imageURL = os.Getenv("IMAGE_URL")
 
